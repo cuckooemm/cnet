@@ -8,17 +8,33 @@ import (
 )
 
 type eventTcpLoop struct {
-	idx          int             // loop index in the server loops list
-	srv          *tcpServer      // server in loop
-	buffer       []byte          // read buffer
-	poller       *netpoll.Poller // epoll
-	connections  map[int]*conn   // loop connections fd -> conn
-	eventHandler IEventCallback  // user eventHandler
+	idx          int               // loop index in the server loops list
+	srv          *tcpServer        // server in loop
+	buffer       []byte            // read buffer
+	poller       *netpoll.Poller   // epoll
+	connections  map[int]*conn     // loop connections fd -> conn
+	eventHandler ITCPEventCallback // user eventHandler
+}
+
+type eventUdpLoop struct {
+	idx          int               // loop index in the server loops list
+	srv          *udpServer        // server in loop
+	buffer       []byte            // read buffer
+	poller       *netpoll.Poller   // epoll
+	eventHandler IUDPEventCallback // user eventHandler
 }
 
 func (el *eventTcpLoop) loopRun() {
 	defer el.srv.signalShutdown()
 	el.srv.logger.Printf("event-loop: %d: Listener: %s", el.idx, el.srv.ln.ln.Addr().String())
+	if err := el.poller.Polling(el.handleEvent); err != nil {
+		el.srv.logger.Printf("closeLoops idx = %d error : %s\n", el.idx, err.Error())
+	}
+}
+
+func (el *eventUdpLoop) loopRun() {
+	defer el.srv.signalShutdown()
+	el.srv.logger.Printf("event-loop: %d: Listener: %s", el.idx, el.srv.ln.ln.LocalAddr().String())
 	if err := el.poller.Polling(el.handleEvent); err != nil {
 		el.srv.logger.Printf("closeLoops idx = %d error : %s\n", el.idx, err.Error())
 	}
@@ -51,6 +67,7 @@ func (el *eventTcpLoop) loopAccept(fd int) error {
 	}
 	return nil
 }
+
 func (el *eventTcpLoop) loopOpen(c *conn) error {
 	c.opened = true
 	out, action := el.eventHandler.OnConnOpened(c)
@@ -181,6 +198,45 @@ func (el *eventTcpLoop) handleEvent(fd int, ev uint32) error {
 	return el.loopAccept(fd)
 }
 
+func (el *eventUdpLoop) handleEvent(fd int, ev uint32) error {
+	if fd == el.srv.ln.fd {
+		return el.loopRead(fd)
+	}
+	return nil
+}
+
+func (el *eventUdpLoop) loopRead(fd int) error {
+	var (
+		n   int
+		sa  unix.Sockaddr
+		err error
+	)
+	n, sa, err = unix.Recvfrom(fd, el.buffer, 0)
+	if err != nil || n == 0 {
+		if err != nil && err != unix.EAGAIN {
+			el.srv.logger.Printf("failed to read UPD packet from fd:%d, error:%v\n", fd, err)
+		}
+		return nil
+	}
+	var (
+		p   *pack
+		out []byte
+		op  Operation
+	)
+	p = newUDPPack(fd, el, sa)
+	out, op = el.eventHandler.PackHandler(el.buffer[:n], p)
+	if out != nil {
+		if err = p.sendTo(out); err != nil {
+			el.eventHandler.SendErr(p.remoteAddr, err)
+		}
+	}
+	switch op {
+	case Shutdown:
+		return ErrServerShutdown
+	}
+	p.releaseUDP()
+	return nil
+}
 func (el *eventTcpLoop) handleOperation(c *conn, op Operation) error {
 	switch op {
 	case None:

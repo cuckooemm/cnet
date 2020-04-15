@@ -227,7 +227,7 @@ func (r *RingBuffer) Cap() int {
 	return r.size
 }
 
-// 统计有效数据长度
+// 统计可用长度
 func (r *RingBuffer) Length() int {
 	if r.r == r.w {
 		if r.isEmpty {

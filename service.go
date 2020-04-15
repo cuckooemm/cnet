@@ -19,8 +19,19 @@ type tcpServer struct {
 	logger       Logger         // customized logger for logging info
 	loop         *eventTcpLoop  // main loop for accepting connections
 	mainLoop     *eventTcpLoop
-	eventHandler IEventCallback     // user eventHandler
+	eventHandler ITCPEventCallback  // user eventHandler
 	subLoopGroup IEventTcpLoopGroup // loops for handling events
+}
+type udpServer struct {
+	ln           *udpListener
+	wg           sync.WaitGroup // event-loop close WaitGroup
+	opt          *UdpOption     // options with server
+	once         sync.Once      // make sure only signalShutdown once
+	cond         *sync.Cond     // shutdown signaler
+	logger       Logger         // customized logger for logging info
+	loop         *eventUdpLoop
+	loopGroup    []*eventUdpLoop
+	eventHandler IUDPEventCallback // user eventHandler
 }
 
 func (srv *tcpServer) start(core int) error {
@@ -75,6 +86,24 @@ func (srv *tcpServer) stop() {
 	}
 }
 
+func (srv *udpServer) stop() {
+	// Wait on a signal for shutdown
+	srv.waitForShutdown()
+	var err error
+	// 通知loop关闭监听
+	for _, loop := range srv.loopGroup {
+		if err = loop.poller.Trigger(func() error {
+			return ErrServerShutdown
+		}); err != nil {
+			srv.logger.Printf("failed to close %d event-loop. err : %v\n", loop.idx, err)
+		}
+	}
+	// Wait on all loops to complete reading events
+	srv.wg.Wait()
+
+	srv.closeLoops()
+}
+
 func (srv *tcpServer) initLoops(core int) error {
 	for i := 0; i < core; i++ {
 		var (
@@ -102,6 +131,37 @@ func (srv *tcpServer) initLoops(core int) error {
 	srv.startLoops()
 	return nil
 }
+
+func (srv *udpServer) initLoops(core int) error {
+	srv.wg.Add(core)
+	for i := 0; i < core; i++ {
+		var (
+			pr  *netpoll.Poller
+			el  *eventUdpLoop
+			err error
+		)
+		if pr, err = netpoll.CreatePoller(); err != nil {
+			return err
+		}
+		el = &eventUdpLoop{
+			idx:          i,
+			srv:          srv,
+			poller:       pr,
+			buffer:       make([]byte, 0x10000), // 65536
+			eventHandler: srv.eventHandler,
+		}
+		// event-loop监听同一fd 监听fd事件到达时会唤醒全部 TODO 这里可以监听多端口
+		if err = el.poller.AddRead(srv.ln.fd); err != nil {
+			return err
+		}
+		go func(el *eventUdpLoop) {
+			el.loopRun()
+			srv.wg.Done()
+		}(el)
+	}
+	return nil
+}
+
 func (srv *tcpServer) startLoops() {
 	srv.subLoopGroup.iterate(func(loop *eventTcpLoop) bool {
 		srv.wg.Add(1)
@@ -179,6 +239,15 @@ func (srv *tcpServer) closeLoops() {
 		return true
 	})
 }
+
+func (srv *udpServer) closeLoops() {
+	for _, loop := range srv.loopGroup {
+		if err := loop.poller.Close(); err != nil {
+			srv.logger.Printf("closeLoops idx = %d error : %s\n", loop.idx, err.Error())
+		}
+	}
+}
+
 func (srv *tcpServer) signalShutdown() {
 	srv.once.Do(func() {
 		srv.cond.L.Lock()
@@ -191,8 +260,20 @@ func (srv *tcpServer) waitForShutdown() {
 	srv.cond.Wait()
 	srv.cond.L.Unlock()
 }
+func (srv *udpServer) signalShutdown() {
+	srv.once.Do(func() {
+		srv.cond.L.Lock()
+		srv.cond.Signal()
+		srv.cond.L.Unlock()
+	})
+}
+func (srv *udpServer) waitForShutdown() {
+	srv.cond.L.Lock()
+	srv.cond.Wait()
+	srv.cond.L.Unlock()
+}
 
-func startTcpService(callback IEventCallback, ln *tcpListener, opt *TcpOption) error {
+func startTcpService(callback ITCPEventCallback, ln *tcpListener, opt *TcpOption) error {
 	var (
 		srv tcpServer
 		err error
@@ -212,6 +293,33 @@ func startTcpService(callback IEventCallback, ln *tcpListener, opt *TcpOption) e
 		return opt.Logger
 	}()
 	if err = srv.start(opt.MultiCore); err != nil {
+		srv.closeLoops()
+		srv.logger.Printf("service is stop with error : %v\n", err)
+		return err
+	}
+	defer srv.stop()
+	return nil
+}
+
+func startUpdService(callback IUDPEventCallback, ln *udpListener, opt *UdpOption) error {
+	var (
+		srv udpServer
+		err error
+	)
+	if opt.MultiCore == 0 {
+		opt.MultiCore = runtime.NumCPU()
+	}
+	srv.opt = opt
+	srv.ln = ln
+	srv.eventHandler = callback
+	srv.cond = sync.NewCond(&sync.Mutex{})
+	srv.logger = func() Logger {
+		if opt.Logger == nil {
+			return defaultLogger
+		}
+		return opt.Logger
+	}()
+	if err = srv.initLoops(opt.MultiCore); err != nil {
 		srv.closeLoops()
 		srv.logger.Printf("service is stop with error : %v\n", err)
 		return err

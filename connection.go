@@ -27,12 +27,15 @@ func init() {
 	tcpConnPoll.New = func() interface{} {
 		return &conn{}
 	}
+	udpPackPoll.New = func() interface{} {
+		return &pack{}
+	}
 }
 func newTCPConn(fd int, el *eventTcpLoop, sa unix.Sockaddr) *conn {
 	var conn = tcpConnPoll.Get().(*conn)
 	conn.fd = fd
 	conn.loop = el
-	conn.localAddr = el.srv.ln.lnAddr
+	conn.localAddr = el.srv.ln.ln.Addr()
 	conn.remoteAddr = netpoll.SocketAddrToTCPOrUnixAddr(sa)
 	conn.inBuf = buf.GetRingBuf()
 	conn.outBuf = buf.GetRingBuf()
@@ -166,3 +169,33 @@ func (c *conn) Context() interface{}       { return c.ctx }
 func (c *conn) SetContext(ctx interface{}) { c.ctx = ctx }
 func (c *conn) LocalAddr() net.Addr        { return c.localAddr }
 func (c *conn) RemoteAddr() net.Addr       { return c.remoteAddr }
+
+type pack struct {
+	fd                    int // file descriptor
+	sa                    unix.Sockaddr
+	localAddr, remoteAddr string // local and remote addr
+}
+
+func newUDPPack(fd int, el *eventUdpLoop, sa unix.Sockaddr) *pack {
+	var pack = udpPackPoll.Get().(*pack)
+	pack.fd = fd
+	pack.sa = sa
+	pack.localAddr = el.srv.ln.ln.LocalAddr().String()
+	pack.remoteAddr = netpoll.SocketAddrToUDPAddr(sa).String()
+	return pack
+}
+
+func (p *pack) releaseUDP() {
+	p.sa = nil
+	p.localAddr = ""
+	p.remoteAddr = ""
+	udpPackPoll.Put(p)
+}
+func (p *pack) SendTo(buf []byte) error {
+	return unix.Sendto(p.fd, buf, 0, p.sa)
+}
+func (p *pack) sendTo(buf []byte) error {
+	return unix.Sendto(p.fd, buf, 0, p.sa)
+}
+func (p *pack) LocalAddr() string  { return p.localAddr }
+func (p *pack) RemoteAddr() string { return p.remoteAddr }

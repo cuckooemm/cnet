@@ -19,6 +19,18 @@ func SocketAddrToTCPOrUnixAddr(sa unix.Sockaddr) net.Addr {
 	return nil
 }
 
+func SocketAddrToUDPAddr(sa unix.Sockaddr) *net.UDPAddr {
+	switch sa := sa.(type) {
+	case *unix.SockaddrInet4:
+		ip := socketAddrInet4ToIP(sa)
+		return &net.UDPAddr{IP: ip, Port: sa.Port}
+	case *unix.SockaddrInet6:
+		ip, zone := socketAddrInet6ToIPAndZone(sa)
+		return &net.UDPAddr{IP: ip, Port: sa.Port, Zone: zone}
+	}
+	return nil
+}
+
 func socketAddrInet4ToIP(sa *unix.SockaddrInet4) net.IP {
 	ip := make([]byte, 16)
 	// V4InV6Prefix

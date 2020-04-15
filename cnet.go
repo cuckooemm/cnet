@@ -13,7 +13,7 @@ const (
 	Shutdown
 )
 
-type IEventCallback interface {
+type ITCPEventCallback interface {
 	// 链接连接时回调
 	OnConnOpened(c Conn) (out []byte, op Operation)
 	// 链接关闭时回调
@@ -23,8 +23,14 @@ type IEventCallback interface {
 	// 唤醒conn时触发 c.wake
 	OnWakenHandler(c Conn) (out []byte, op Operation)
 }
+type IUDPEventCallback interface {
+	// 读事件触发
+	PackHandler(pack []byte, p Pconn) (out []byte, op Operation)
+	// 发送数据错误时触发
+	SendErr(remoteAddr string, err error)
+}
 type Conn interface {
-	// 上下文返回用户定义的上下文。
+	// 返回用户定义的上下文。
 	Context() (ctx interface{})
 
 	// 设置用户定义的上下文
@@ -42,9 +48,7 @@ type Conn interface {
 	// ResetBuffer重置入站环形缓冲区，入站环形缓冲区中的所有数据已被清除。
 	ResetBuffer()
 
-	// ReadN从入站环形缓冲区和事件循环缓冲区读取具有给定长度的字节，不会移动“读取”指针，直到调用ShiftN方法，它才会从缓冲区中逐出数据，
-	// 而是从入站环形缓冲区中读取数据。 当可用数据的长度等于给定的“n”时，使用缓冲区和事件循环缓冲区，否则它将不会从入站环形缓冲区读取任何数据。
-	// 因此，只有在完全知道基于协议的后续TCP流的长度（例如HTTP请求中的Content-Length属性）时，才应使用此方法，该属性指示应从入站环形缓冲区读取多少数据。
+	// ReadN从入站环形缓冲区和读取具有给定长度的字节，不会移动“读取”指针，直到调用ShiftN方法，它才会从缓冲区中逐出数据，
 	ReadN(n int) (size int, buf []byte)
 
 	// ShiftN将“read”指针移入给定长度的缓冲区中。
@@ -63,7 +67,18 @@ type Conn interface {
 	Close() error
 }
 
-func TcpService(callback IEventCallback, addr string, opt TcpOption) error {
+type Pconn interface {
+	// 连接的本地套接字地址
+	LocalAddr() (addr string)
+
+	// 连接的远程对端地址
+	RemoteAddr() (addr string)
+
+	// SendTo为UDP套接字写入数据，它允许您在各个goroutine中将数据发送回UDP套接字。
+	SendTo(buf []byte) error
+}
+
+func TcpService(callback ITCPEventCallback, addr string, opt TcpOption) error {
 	var (
 		ln  tcpListener
 		err error
@@ -76,10 +91,30 @@ func TcpService(callback IEventCallback, addr string, opt TcpOption) error {
 	if err != nil {
 		return err
 	}
-	//lr.lsraddr = lr.lr.Addr()
 	if err = ln.initFd(); err != nil {
 		return err
 	}
 	defer ln.close()
 	return startTcpService(callback, &ln, &opt)
+}
+
+func UdpService(callback IUDPEventCallback, addr string, opt UdpOption) error {
+	var (
+		ln  udpListener
+		err error
+	)
+	defer ln.close()
+	if opt.ReusePort {
+		ln.ln, err = internal.ReusePortListenPacket("udp", addr)
+	} else {
+		ln.ln, err = net.ListenPacket("udp", addr)
+	}
+	if err != nil {
+		return err
+	}
+	if err = ln.initFd(); err != nil {
+		return err
+	}
+	defer ln.close()
+	return startUpdService(callback, &ln, &opt)
 }
