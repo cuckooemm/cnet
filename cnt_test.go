@@ -56,7 +56,6 @@ func (sc *serverTcpCallback) OnConnClosed(c Conn, err error) (op Operation) {
 		fmt.Println("connection err: ", err)
 	}
 	atomic.AddInt64(&sc.connected, -1)
-	atomic.AddInt64(&sc.connTotal, 1)
 	atomic.AddInt64(&sc.close, 1)
 	return
 }
