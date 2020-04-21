@@ -1,6 +1,17 @@
 # cnet
 
-#### use
+#### TODO
+- http插件
+- quic插件
+- 易用
+- 限流
+- ...
+
+#### How to use
+
+```go
+go get -u github.com/cuckooemm/cnet
+```
 
 TCP
 ```go
