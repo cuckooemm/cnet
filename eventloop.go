@@ -8,20 +8,20 @@ import (
 )
 
 type eventTcpLoop struct {
-	idx          int               // loop index in the server loops list
-	srv          *tcpServer        // server in loop
-	buffer       []byte            // read buffer
-	poller       *netpoll.Poller   // epoll
-	connections  map[int]*conn     // loop connections fd -> conn
-	eventHandler ITCPEventCallback // user eventHandler
+	idx          int             // loop index in the server loops list
+	srv          *tcpServer      // server in loop
+	buffer       []byte          // read buffer
+	poller       *netpoll.Poller // epoll
+	connections  map[int]*conn   // loop connections fd -> conn
+	eventHandler IEventCallback  // user eventHandler
 }
 
 type eventUdpLoop struct {
-	idx          int               // loop index in the server loops list
-	srv          *udpServer        // server in loop
-	buffer       []byte            // read buffer
-	poller       *netpoll.Poller   // epoll
-	eventHandler IUDPEventCallback // user eventHandler
+	idx          int             // loop index in the server loops list
+	srv          *udpServer      // server in loop
+	buffer       []byte          // read buffer
+	poller       *netpoll.Poller // epoll
+	eventHandler IEventCallback  // user eventHandler
 }
 
 func (el *eventTcpLoop) loopRun() {
@@ -113,7 +113,6 @@ func (el *eventTcpLoop) loopRead(c *conn) error {
 }
 
 func (el *eventTcpLoop) loopWrite(c *conn) error {
-	//el.eventHandler.PreWrite()
 	var (
 		head, tail []byte
 		n          int
@@ -198,7 +197,7 @@ func (el *eventTcpLoop) handleEvent(fd int, ev uint32) error {
 	return el.loopAccept(fd)
 }
 
-func (el *eventUdpLoop) handleEvent(fd int, ev uint32) error {
+func (el *eventUdpLoop) handleEvent(fd int, _ uint32) error {
 	if fd == el.srv.ln.fd {
 		return el.loopRead(fd)
 	}

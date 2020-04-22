@@ -4,7 +4,6 @@ import (
 	"github.com/cuckooemm/cnet/internal/asyncwork"
 	"golang.org/x/sys/unix"
 	"log"
-	"syscall"
 	"unsafe"
 )
 
@@ -24,20 +23,16 @@ type Poller struct {
 // CreatePoller instantiates a poller.
 func CreatePoller() (*Poller, error) {
 	var (
-		pr     *Poller
-		wfd    uintptr
-		sysErr syscall.Errno
-		err    error
+		pr  *Poller
+		err error
 	)
 	pr = new(Poller)
 	if pr.efd, err = unix.EpollCreate1(unix.EPOLL_CLOEXEC); err != nil {
 		return nil, err
 	}
-	if wfd, _, sysErr = unix.Syscall(unix.SYS_EVENTFD2, unix.O_CLOEXEC, unix.O_NONBLOCK, 0); sysErr != 0 {
-		_ = unix.Close(pr.efd)
-		return nil, sysErr
+	if pr.wfd, err = unix.Eventfd(0, unix.O_CLOEXEC|unix.O_NONBLOCK); err != nil {
+		return nil, err
 	}
-	pr.wfd = int(wfd)
 	pr.wfdBuf = make([]byte, 8)
 	if err = pr.AddRead(pr.wfd); err != nil {
 		return nil, err

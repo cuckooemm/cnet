@@ -4,6 +4,7 @@ import (
 	"github.com/cuckooemm/cnet/internal/netpoll"
 	"log"
 	"os"
+	"os/signal"
 	"runtime"
 	"sync"
 )
@@ -11,29 +12,32 @@ import (
 var defaultLogger = Logger(log.New(os.Stderr, "[service] - ", log.LstdFlags))
 
 type tcpServer struct {
-	ln           *tcpListener
-	wg           sync.WaitGroup // event-loop close WaitGroup
-	opt          *TcpOption     // options with server
-	once         sync.Once      // make sure only signalShutdown once
-	cond         *sync.Cond     // shutdown signaler
-	logger       Logger         // customized logger for logging info
-	loop         *eventTcpLoop  // main loop for accepting connections
-	mainLoop     *eventTcpLoop
-	eventHandler ITCPEventCallback  // user eventHandler
-	subLoopGroup IEventTcpLoopGroup // loops for handling events
+	ln                 *tcpListener
+	wg                 sync.WaitGroup // event-loop close WaitGroup
+	opt                *TcpOption     // options with server
+	once               sync.Once      // make sure only signalShutdown once
+	cond               *sync.Cond     // shutdown signaler
+	logger             Logger         // customized logger for logging info
+	network, localAddr string         // network and local address
+	loop               *eventTcpLoop  // main loop for accepting connections
+	mainLoop           *eventTcpLoop
+	eventHandler       IEventCallback     // user eventHandler
+	subLoopGroup       IEventTcpLoopGroup // loops for handling events
 }
 type udpServer struct {
-	ln           *udpListener
-	wg           sync.WaitGroup // event-loop close WaitGroup
-	opt          *UdpOption     // options with server
-	once         sync.Once      // make sure only signalShutdown once
-	cond         *sync.Cond     // shutdown signaler
-	logger       Logger         // customized logger for logging info
-	loop         *eventUdpLoop
-	loopGroup    []*eventUdpLoop
-	eventHandler IUDPEventCallback // user eventHandler
+	ln                 *udpListener
+	wg                 sync.WaitGroup // event-loop close WaitGroup
+	opt                *UdpOption     // options with server
+	once               sync.Once      // make sure only signalShutdown once
+	cond               *sync.Cond     // shutdown signaler
+	logger             Logger         // customized logger for logging info
+	network, localAddr string         // network and local address
+	loop               *eventUdpLoop
+	loopGroup          []*eventUdpLoop
+	eventHandler       IEventCallback // user eventHandler
 }
 
+// 开启服务
 func (srv *tcpServer) start(core int) error {
 	// 内核负载均衡
 	if srv.opt.ReusePort {
@@ -42,7 +46,9 @@ func (srv *tcpServer) start(core int) error {
 	return srv.initReactors(core)
 }
 
-func (srv *tcpServer) stop() {
+// 等待服务关闭
+func (srv *tcpServer) wait() {
+	go srv.signalHandler()
 	// Wait on a signal for shutdown
 	srv.waitForShutdown()
 	var err error
@@ -273,7 +279,7 @@ func (srv *udpServer) waitForShutdown() {
 	srv.cond.L.Unlock()
 }
 
-func startTcpService(callback ITCPEventCallback, ln *tcpListener, opt *TcpOption) error {
+func startTcpService(callback IEventCallback, ln *tcpListener, opt *TcpOption) error {
 	var (
 		srv tcpServer
 		err error
@@ -283,6 +289,8 @@ func startTcpService(callback ITCPEventCallback, ln *tcpListener, opt *TcpOption
 	}
 	srv.opt = opt
 	srv.ln = ln
+	srv.localAddr = ln.ln.Addr().String()
+	srv.network = "tcp"
 	srv.eventHandler = callback
 	srv.cond = sync.NewCond(&sync.Mutex{})
 	srv.subLoopGroup = new(roundRobinEventLoopGroup)
@@ -292,16 +300,17 @@ func startTcpService(callback ITCPEventCallback, ln *tcpListener, opt *TcpOption
 		}
 		return opt.Logger
 	}()
+
 	if err = srv.start(opt.MultiCore); err != nil {
 		srv.closeLoops()
 		srv.logger.Printf("service is stop with error : %v\n", err)
 		return err
 	}
-	defer srv.stop()
+	defer srv.wait()
 	return nil
 }
 
-func startUpdService(callback IUDPEventCallback, ln *udpListener, opt *UdpOption) error {
+func startUpdService(callback IEventCallback, ln *udpListener, opt *UdpOption) error {
 	var (
 		srv udpServer
 		err error
@@ -311,6 +320,8 @@ func startUpdService(callback IUDPEventCallback, ln *udpListener, opt *UdpOption
 	}
 	srv.opt = opt
 	srv.ln = ln
+	srv.network = "udp"
+	srv.localAddr = ln.ln.LocalAddr().String()
 	srv.eventHandler = callback
 	srv.cond = sync.NewCond(&sync.Mutex{})
 	srv.logger = func() Logger {
@@ -326,4 +337,11 @@ func startUpdService(callback IUDPEventCallback, ln *udpListener, opt *UdpOption
 	}
 	defer srv.stop()
 	return nil
+}
+
+func (srv *tcpServer) signalHandler() {
+	control := make(chan os.Signal)
+	signal.Notify(control, os.Interrupt, os.Kill)
+	<-control
+	srv.signalShutdown()
 }

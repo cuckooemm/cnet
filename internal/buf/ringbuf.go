@@ -12,7 +12,6 @@ const (
 
 var ErrIsEmpty = errors.New("ring-buffer is empty")
 
-// TODO 待更改为一个ring缓冲区完成收发
 type RingBuffer struct {
 	buf     []byte
 	size    int
