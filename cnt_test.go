@@ -34,12 +34,12 @@ func TestCnet(t *testing.T) {
 	})
 }
 
-type serverTcpCallback struct {
+type serverCallback struct {
 	connTotal, connected, close int64
 	spanDown, spanUp            int64
 }
 
-func (sc *serverTcpCallback) OnConnOpened(c Conn) (out []byte, op Operation) {
+func (sc *serverCallback) OnConnOpened(c Conn) (out []byte, op Operation) {
 	var str = "hello client, welcome to connection\n"
 	out = []byte(str)
 	atomic.AddInt64(&sc.spanUp, int64(len(out)))
@@ -51,7 +51,7 @@ func (sc *serverTcpCallback) OnConnOpened(c Conn) (out []byte, op Operation) {
 }
 
 // 链接关闭时回调
-func (sc *serverTcpCallback) OnConnClosed(c Conn, err error) (op Operation) {
+func (sc *serverCallback) OnConnClosed(c Conn, err error) (op Operation) {
 	if err != nil {
 		fmt.Println("connection err: ", err)
 	}
@@ -61,36 +61,20 @@ func (sc *serverTcpCallback) OnConnClosed(c Conn, err error) (op Operation) {
 }
 
 // 读事件触发
-func (sc *serverTcpCallback) ConnHandler(c Conn) (out []byte, op Operation) {
-	var rcv = c.Read()
-	var l = len(rcv)
-	atomic.AddInt64(&sc.spanDown, int64(l))
-	fmt.Printf("已收到 %s client 发来长度为: %d 的信息: %s\n", c.RemoteAddr().String(), l, rcv)
+func (sc *serverCallback) ConnHandler(c Conn) (out []byte, op Operation) {
+	var n, rcv1, rcv2 = c.Read()
+	atomic.AddInt64(&sc.spanDown, int64(n))
+	fmt.Printf("已收到 %s client 发来长度为: %d 的信息: %s ,2=%s\n", c.RemoteAddr(), n, rcv1, rcv2)
 	out = []byte("receive ")
-	c.ShiftN(l)
-	out = append(out, rcv...)
+	out = append(out, rcv1...)
+	if rcv2 != nil {
+		out = append(out, rcv2...)
+	}
 	atomic.AddInt64(&sc.spanUp, int64(len(out)))
+	c.ShiftN(n)
 	return
 }
-
-// 唤醒conn时触发 c.wake
-func (sc *serverTcpCallback) OnWakenHandler(c Conn) (out []byte, op Operation) {
-	return nil, None
-}
-
-func testTcpService(addr string, opt TcpOption) error {
-	var (
-		call serverTcpCallback
-	)
-
-	return TcpService(&call, addr, opt)
-}
-
-type serverUdpCallback struct {
-	spanDown, spanUp int64
-}
-
-func (sc *serverUdpCallback) PackHandler(pack []byte, p Pconn) (out []byte, op Operation) {
+func (sc *serverCallback) PackHandler(pack []byte, p Pconn) (out []byte, op Operation) {
 	fmt.Printf("receive message :%s of client: %s", pack, p.RemoteAddr())
 	atomic.AddInt64(&sc.spanDown, int64(len(pack)))
 	out = append(out, []byte("reply: ")...)
@@ -99,12 +83,25 @@ func (sc *serverUdpCallback) PackHandler(pack []byte, p Pconn) (out []byte, op O
 	return
 }
 
-func (sc *serverUdpCallback) SendErr(remoteAddr string, err error) {
+func (sc *serverCallback) SendErr(remoteAddr string, err error) {
 	fmt.Printf("send error: %v of client: %s", err, remoteAddr)
 }
+
+// 唤醒conn时触发 c.wake
+func (sc *serverCallback) OnWakenHandler(c Conn) (out []byte, op Operation) {
+	return nil, None
+}
+
+func testTcpService(addr string, opt TcpOption) error {
+	var (
+		call serverCallback
+	)
+	return TcpService(&call, addr, opt)
+}
+
 func testUdpService(addr string, opt UdpOption) error {
 	var (
-		call serverUdpCallback
+		call serverCallback
 	)
 	return UdpService(&call, addr, opt)
 }
