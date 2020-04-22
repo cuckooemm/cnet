@@ -34,7 +34,11 @@ func (sc *serverCallback) OnConnClosed(c cnet.Conn, err error) (op cnet.Operatio
 }
 
 // 读事件触发
-func (sc *serverCallback) ConnHandler(c cnet.Conn) (out []byte, op cnet.Operation) {
+func (sc *serverCallback) ConnHandler(c cnet.Conn) ([]byte, cnet.Operation) {
+	var (
+		out []byte
+		op  cnet.Operation
+	)
 	var n, rcv1, rcv2 = c.Read()
 	atomic.AddInt64(&sc.spanDown, int64(n))
 	fmt.Printf("已收到 %s client 发来长度为: %d 的信息: %s ,2=%s\n", c.RemoteAddr(), n, rcv1, rcv2)
@@ -45,7 +49,7 @@ func (sc *serverCallback) ConnHandler(c cnet.Conn) (out []byte, op cnet.Operatio
 	}
 	atomic.AddInt64(&sc.spanUp, int64(len(out)))
 	c.ShiftN(n)
-	return
+	return out, op
 }
 
 // udp 协议需实现

@@ -100,8 +100,9 @@ func (el *eventTcpLoop) loopRead(c *conn) error {
 	if _, err = c.inBuf.Write(el.buffer[:n]); err != nil {
 		return el.loopCloseConn(c, err)
 	}
-	out, op = el.eventHandler.ConnHandler(c)
-	c.write(out)
+	if out, op = el.eventHandler.ConnHandler(c); out != nil {
+		c.write(out)
+	}
 	switch op {
 	case None:
 	case Close:

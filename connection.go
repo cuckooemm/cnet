@@ -8,11 +8,6 @@ import (
 )
 
 var (
-	tcpConnPoll = sync.Pool{
-		New: func() interface{} {
-			return &conn{network: "tcp"}
-		},
-	}
 	udpPackPoll = sync.Pool{
 		New: func() interface{} {
 			return &pack{}
@@ -30,7 +25,7 @@ type conn struct {
 }
 
 func newTCPConn(fd int, el *eventTcpLoop, sa unix.Sockaddr) *conn {
-	var conn = tcpConnPoll.Get().(*conn)
+	var conn = &conn{}
 	conn.fd = fd
 	conn.data = make(map[string]interface{})
 	conn.loop = el
@@ -43,16 +38,12 @@ func newTCPConn(fd int, el *eventTcpLoop, sa unix.Sockaddr) *conn {
 
 func (c *conn) releaseTCP() {
 	c.opened = false
-	c.data = nil
-	c.loop = nil
-	c.remoteAddr = ""
 	c.inBuf.Reset()
 	c.outBuf.Reset()
 	buf.PutRingBuf(c.inBuf)
 	buf.PutRingBuf(c.outBuf)
 	c.inBuf = nil
 	c.outBuf = nil
-	tcpConnPoll.Put(c)
 }
 
 func (c *conn) open(buf []byte) {
