@@ -128,7 +128,7 @@ func (srv *tcpServer) initLoops(core int) error {
 			connections:  make(map[int]*conn, 16),
 			eventHandler: srv.eventHandler,
 		}
-		// event-loop监听同一fd 监听fd事件到达时会唤醒全部 TODO 这里可以监听多端口
+		// event-loop监听同一fd 监听fd事件到达时会唤醒全部
 		if err = el.poller.AddRead(srv.ln.fd); err != nil {
 			return err
 		}
@@ -156,7 +156,7 @@ func (srv *udpServer) initLoops(core int) error {
 			buffer:       make([]byte, 0x10000), // 65536
 			eventHandler: srv.eventHandler,
 		}
-		// event-loop监听同一fd 监听fd事件到达时会唤醒全部 TODO 这里可以监听多端口
+		// event-loop监听同一fd 监听fd事件到达时会唤醒全部
 		if err = el.poller.AddRead(srv.ln.fd); err != nil {
 			return err
 		}

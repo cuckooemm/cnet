@@ -70,13 +70,12 @@ func (sc *serverCallback) OnWakenHandler(c cnet.Conn) (out []byte, op cnet.Opera
 
 func main() {
 	var (
-		callback serverCallback
-		c        *cnet.Cnet
-		err      error
+		c   cnet.Cnet
+		err error
 	)
-	c = &cnet.Cnet{
+	c = cnet.Cnet{
 		Network:      cnet.Tcp,
-		Callback:     &callback,
+		Callback:     &serverCallback{},
 		Addr:         ":8000",
 		MultiCore:    4,
 		TcpKeepAlive: time.Minute,

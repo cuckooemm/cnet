@@ -90,13 +90,20 @@ func (sc *serverUdpCallback) SendErr(remoteAddr string, err error) {
 }
 
 func main(){
-    var (
-    	call serverUdpCallback
-        addr = ":8000"
-        err error
-    )   
-    if err = UdpService(&call, addr, TcpOption{MultiCore: 4, ReusePort: true}); err != nil{
-        // err handler...
-    }
+	var (
+		c        cnet.Cnet
+		err      error
+	)
+	c = cnet.Cnet{
+		Network:      cnet.Tcp,
+		Callback:     &serverCallback{},
+		Addr:         ":8000",
+		MultiCore:    4,
+		TcpKeepAlive: time.Minute,
+		ReusePort:    true,
+	}
+	if err = c.Listener(); err != nil {
+		println(err)
+	}
 }
 ```
