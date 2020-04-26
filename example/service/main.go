@@ -39,24 +39,28 @@ func (sc *serverCallback) ConnHandler(c cnet.Conn) ([]byte, cnet.Operation) {
 		out []byte
 		op  cnet.Operation
 	)
-	var n, rcv1, rcv2 = c.Read()
+	var n, rcv = c.Read()
 	atomic.AddInt64(&sc.spanDown, int64(n))
-	fmt.Printf("已收到 %s client 发来长度为: %d 的信息: %s ,2=%s\n", c.RemoteAddr(), n, rcv1, rcv2)
+	fmt.Printf("已收到 %s client 发来长度为: %d 的信息: %s\n", c.RemoteAddr(), n, rcv)
 	out = []byte("receive ")
-	out = append(out, rcv1...)
-	if rcv2 != nil {
-		out = append(out, rcv2...)
-	}
+	out = append(out, rcv...)
 	atomic.AddInt64(&sc.spanUp, int64(len(out)))
 	c.ShiftN(n)
+	_ = c.Wake()
 	return out, op
+}
+
+// 唤醒conn时触发 c.wake
+func (sc *serverCallback) OnWakenHandler(c cnet.Conn) (out []byte, op cnet.Operation) {
+	fmt.Printf("%s 唤醒了\n", c.RemoteAddr())
+	return nil, cnet.None
 }
 
 // udp 协议需实现
 func (sc *serverCallback) PackHandler(pack []byte, p cnet.Pconn) (out []byte, op cnet.Operation) {
-	fmt.Printf("receive message :%s of client: %s", pack, p.RemoteAddr())
+	fmt.Printf("receive message :%s of client: %s\n", pack, p.RemoteAddr())
 	atomic.AddInt64(&sc.spanDown, int64(len(pack)))
-	out = append(out, []byte("reply: ")...)
+	out = []byte("reply: ")
 	out = append(out, pack...)
 	atomic.AddInt64(&sc.spanUp, int64(len(out)))
 	return
@@ -67,18 +71,13 @@ func (sc *serverCallback) SendErr(remoteAddr string, err error) {
 	fmt.Printf("send error: %v of client: %s", err, remoteAddr)
 }
 
-// 唤醒conn时触发 c.wake
-func (sc *serverCallback) OnWakenHandler(c cnet.Conn) (out []byte, op cnet.Operation) {
-	return nil, cnet.None
-}
-
 func main() {
 	var (
 		c   cnet.Cnet
 		err error
 	)
 	c = cnet.Cnet{
-		Network:      cnet.Tcp,
+		Network:      cnet.Udp,
 		Callback:     &serverCallback{},
 		Addr:         ":8000",
 		MultiCore:    4,

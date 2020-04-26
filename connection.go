@@ -38,8 +38,6 @@ func newTCPConn(fd int, el *eventTcpLoop, sa unix.Sockaddr) *conn {
 
 func (c *conn) releaseTCP() {
 	c.opened = false
-	c.inBuf.Reset()
-	c.outBuf.Reset()
 	buf.PutRingBuf(c.inBuf)
 	buf.PutRingBuf(c.outBuf)
 	c.inBuf = nil
@@ -53,11 +51,11 @@ func (c *conn) open(buf []byte) {
 	)
 	// 写入socket 出错or满  写入outBuf
 	if n, err = unix.Write(c.fd, buf); err != nil {
-		_, _ = c.outBuf.Write(buf)
+		c.outBuf.Write(buf)
 		return
 	}
 	if n < len(buf) {
-		_, _ = c.outBuf.Write(buf[n:])
+		c.outBuf.Write(buf[n:])
 	}
 }
 
@@ -66,7 +64,7 @@ func (c *conn) write(buf []byte) {
 		return
 	}
 	if !c.outBuf.IsEmpty() {
-		_, _ = c.outBuf.Write(buf)
+		c.outBuf.Write(buf)
 		return
 	}
 	var (
@@ -75,7 +73,7 @@ func (c *conn) write(buf []byte) {
 	)
 	if n, err = unix.Write(c.fd, buf); err != nil {
 		if err == unix.EAGAIN {
-			_, _ = c.outBuf.Write(buf)
+			c.outBuf.Write(buf)
 			// 监听添加可写事件
 			if err = c.loop.poller.ModReadWrite(c.fd); err != nil {
 				_ = c.loop.loopCloseConn(c, err)
@@ -86,31 +84,53 @@ func (c *conn) write(buf []byte) {
 		return
 	}
 	if n < len(buf) {
-		_, _ = c.outBuf.Write(buf[n:])
+		c.outBuf.Write(buf[n:])
 		_ = c.loop.poller.ModReadWrite(c.fd)
 	}
 }
 
-func (c *conn) Read() (size int, head, tail []byte) {
-	head, tail = c.inBuf.LazyReadAll()
-	size = len(head) + len(tail)
-	return
+func (c *conn) Read() (int, []byte) {
+	var (
+		n          int
+		head, tail = c.inBuf.LazyReadAll()
+	)
+	if tail == nil {
+		n = len(head)
+		return n, head
+	} else {
+		n = len(head) + len(tail)
+		var data = make([]byte, n)
+		copy(data, head)
+		copy(data[len(head):], tail)
+		return n, data
+	}
 }
 
 func (c *conn) ResetBuffer() {
 	c.inBuf.Reset()
-	//bytebuffer.Put(c.byteBuffer)
-	//c.byteBuffer = nil
 }
 
-func (c *conn) ReadN(n int) (size int, head, tail []byte) {
+func (c *conn) ReadN(n int) (int, []byte) {
+	var (
+		size       int
+		head, tail []byte
+	)
+
 	inBufLen := c.inBuf.Length()
 	if n < 1 || inBufLen < n {
-		return
+		return 0, nil
 	}
 	head, tail = c.inBuf.LazyRead(n)
-	size = len(head) + len(tail)
-	return
+	if tail == nil {
+		size = len(head)
+		return size, head
+	} else {
+		size = len(head) + len(tail)
+		var data = make([]byte, size)
+		copy(data, head)
+		copy(data[len(head):], tail)
+		return size, data
+	}
 }
 
 func (c *conn) ShiftN(n int) (size int) {

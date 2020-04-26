@@ -97,12 +97,11 @@ func (el *eventTcpLoop) loopRead(c *conn) error {
 		}
 		return el.loopCloseConn(c, err)
 	}
-	if _, err = c.inBuf.Write(el.buffer[:n]); err != nil {
-		return el.loopCloseConn(c, err)
-	}
+	c.inBuf.Write(el.buffer[:n])
 	if out, op = el.eventHandler.ConnHandler(c); out != nil {
 		c.write(out)
 	}
+
 	switch op {
 	case None:
 	case Close:
@@ -199,10 +198,7 @@ func (el *eventTcpLoop) handleEvent(fd int, ev uint32) error {
 }
 
 func (el *eventUdpLoop) handleEvent(fd int, _ uint32) error {
-	if fd == el.srv.ln.fd {
-		return el.loopRead(fd)
-	}
-	return nil
+	return el.loopRead(fd)
 }
 
 func (el *eventUdpLoop) loopRead(fd int) error {
@@ -224,8 +220,7 @@ func (el *eventUdpLoop) loopRead(fd int) error {
 		op  Operation
 	)
 	p = newUDPPack(fd, el, sa)
-	out, op = el.eventHandler.PackHandler(el.buffer[:n], p)
-	if out != nil {
+	if out, op = el.eventHandler.PackHandler(el.buffer[:n], p); out != nil {
 		if err = p.sendTo(out); err != nil {
 			el.eventHandler.SendErr(p.remoteAddr, err)
 		}

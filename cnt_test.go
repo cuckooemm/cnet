@@ -62,16 +62,13 @@ func (sc *serverCallback) OnConnClosed(c Conn, err error) (op Operation) {
 
 // 读事件触发
 func (sc *serverCallback) ConnHandler(c Conn) (out []byte, op Operation) {
-	var n, rcv1, rcv2 = c.Read()
+	var n, rcv = c.Read()
 	atomic.AddInt64(&sc.spanDown, int64(n))
-	fmt.Printf("已收到 %s client 发来长度为: %d 的信息: %s ,2=%s\n", c.RemoteAddr(), n, rcv1, rcv2)
 	out = []byte("receive ")
-	out = append(out, rcv1...)
-	if rcv2 != nil {
-		out = append(out, rcv2...)
-	}
+	out = append(out, rcv...)
 	atomic.AddInt64(&sc.spanUp, int64(len(out)))
 	c.ShiftN(n)
+	c.Wake()
 	return
 }
 func (sc *serverCallback) PackHandler(pack []byte, p Pconn) (out []byte, op Operation) {
@@ -80,6 +77,7 @@ func (sc *serverCallback) PackHandler(pack []byte, p Pconn) (out []byte, op Oper
 	out = append(out, []byte("reply: ")...)
 	out = append(out, pack...)
 	atomic.AddInt64(&sc.spanUp, int64(len(out)))
+
 	return
 }
 
@@ -89,19 +87,30 @@ func (sc *serverCallback) SendErr(remoteAddr string, err error) {
 
 // 唤醒conn时触发 c.wake
 func (sc *serverCallback) OnWakenHandler(c Conn) (out []byte, op Operation) {
+	fmt.Printf("%s 唤醒\n", c.RemoteAddr())
 	return nil, None
 }
 
 func testTcpService(addr string, opt TcpOption) error {
-	var (
-		call serverCallback
-	)
-	return TcpService(&call, addr, opt)
+	var c = Cnet{
+		Network:      Tcp,
+		Callback:     &serverCallback{},
+		Addr:         ":8000",
+		MultiCore:    4,
+		TcpKeepAlive: time.Minute,
+		ReusePort:    true,
+	}
+	return c.Listener()
 }
 
 func testUdpService(addr string, opt UdpOption) error {
-	var (
-		call serverCallback
-	)
-	return UdpService(&call, addr, opt)
+	var c = Cnet{
+		Network:      Udp,
+		Callback:     &serverCallback{},
+		Addr:         ":8000",
+		MultiCore:    4,
+		TcpKeepAlive: time.Minute,
+		ReusePort:    true,
+	}
+	return c.Listener()
 }

@@ -26,7 +26,7 @@ func (q *Queue) Add(work Work) (count int) {
 func (q *Queue) Exec() (err error) {
 	q.lc.Lock()
 	var works = q.works
-	q.works = nil
+	q.works = make([]func() error, 0, len(works))
 	q.lc.Unlock()
 	for _, work := range works {
 		if err = work(); err != nil {

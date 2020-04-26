@@ -49,22 +49,22 @@ type Conn interface {
 	RemoteAddr() string
 
 	// Read从入站环形缓冲区中读取所有数据，而不会移动“read”指针，不会淘汰缓冲区数据，直到调用ResetBuffer方法为止 。
-	Read() (size int, head, tail []byte)
+	Read() (int, []byte)
 
 	// ResetBuffer重置入站环形缓冲区
 	ResetBuffer()
 
 	// ReadN从入站环形缓冲区和读取具有给定长度的字节，不会移动“读取”指针，直到调用ShiftN方法，它才会从缓冲区中逐出数据，
-	ReadN(n int) (size int, head, tail []byte)
+	ReadN(n int) (int, []byte)
 
 	// ShiftN将“read”指针移入给定长度的缓冲区中。
-	ShiftN(n int) (size int)
+	ShiftN(n int) int
 
 	// BufferLength 返回入站环形缓冲区中可用数据的长度。
-	BufferLength() (size int)
+	BufferLength() int
 
 	// AsyncWrite异步将数据写入客户端/连接，通常在单个goroutine中而不是事件循环goroutine中调用它。
-	AsyncWrite(buf []byte) error
+	AsyncWrite([]byte) error
 
 	// 唤醒会为此连接触发一个React事件。
 	Wake() error

@@ -45,9 +45,7 @@ func (p *Poller) Polling(callback func(fd int, ev uint32) error) (err error) {
 	var eventList = newEventList(InitEvents)
 	var waken bool
 	for {
-		var (
-			n int
-		)
+		var n int
 		if n, err = unix.EpollWait(p.efd, eventList.events, -1); err != nil && err != unix.EINTR {
 			log.Println(err)
 			continue

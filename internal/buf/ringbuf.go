@@ -153,10 +153,10 @@ func (r *RingBuffer) ReadByte() (b byte, err error) {
 }
 
 // 写入数据，自动扩容
-func (r *RingBuffer) Write(p []byte) (n int, err error) {
-	n = len(p)
+func (r *RingBuffer) Write(p []byte) {
+	var n = len(p)
 	if n == 0 {
-		return 0, nil
+		return
 	}
 	free := r.Free()
 	if n > free {
@@ -182,7 +182,6 @@ func (r *RingBuffer) Write(p []byte) (n int, err error) {
 		r.w = 0
 	}
 	r.isEmpty = false
-	return n, err
 }
 
 func (r *RingBuffer) WriteByte(c byte) error {
@@ -254,13 +253,13 @@ func (r *RingBuffer) malloc(cap int) {
 }
 
 // 写如string
-func (r *RingBuffer) WriteString(s string) (n int, err error) {
+func (r *RingBuffer) WriteString(s string) {
 	var (
 		x   = (*[2]uintptr)(unsafe.Pointer(&s))
 		h   = [3]uintptr{x[0], x[1], x[1]}
 		buf = *(*[]byte)(unsafe.Pointer(&h))
 	)
-	return r.Write(buf)
+	r.Write(buf)
 }
 
 func (r *RingBuffer) IsFull() bool {
