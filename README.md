@@ -3,13 +3,6 @@
 本框架从evio和gnet派生，更改了部分api与处理逻辑。  
 基于epoll事件分发的网络服务框架，仅支持linux 下运行。
 
-#### TODO
-- http插件
-- quic插件
-- 易用
-- 限流
-- ...
-
 #### How to use
 ```go
 go get -u github.com/cuckooemm/cnet
